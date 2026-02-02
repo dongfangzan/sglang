@@ -105,6 +105,13 @@ class KimiK2Detector(BaseFormatDetector):
             # return the normal text if parsing fails
             return StreamingParseResult(normal_text=text)
 
+    def _is_partial_token_prefix(self, buffer: str, token: str) -> bool:
+        """Check if buffer ends with a prefix of the given token."""
+        for i in range(1, min(len(buffer) + 1, len(token))):
+            if token.startswith(buffer[-i:]):
+                return True
+        return False
+
     def parse_streaming_increment(
         self, new_text: str, tools: List[Tool]
     ) -> StreamingParseResult:
@@ -119,7 +126,16 @@ class KimiK2Detector(BaseFormatDetector):
             self.bot_token in current_text or self.tool_call_start_token in current_text
         )
 
+        # Check if buffer ends with partial token prefix (token may be split across chunks)
+        may_be_partial = (
+            self._is_partial_token_prefix(current_text, self.bot_token)
+            or self._is_partial_token_prefix(current_text, self.tool_call_start_token)
+        )
+
         if not has_tool_call:
+            if may_be_partial:
+                # Might be partial token, keep buffering without emitting text
+                return StreamingParseResult()
             self._buffer = ""
             for e_token in [self.eot_token, self.tool_call_end_token]:
                 if e_token in new_text:
